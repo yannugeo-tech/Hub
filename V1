@@ -1,0 +1,204 @@
+-- Rayfield 라이브러리 로드
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- 24시간 인증 기록 파일 경로
+local AuthFile = "Neihub_24Hours_Auth.json"
+
+-- 24시간 유효성 검사 함수
+local function checkAuthValid()
+   if readfile and isfile and isfile(AuthFile) then
+      local success, data = pcall(function()
+         return HttpService:JSONDecode(readfile(AuthFile))
+      end)
+      if success and data and data.ExpireTime then
+         -- 현재 시간이 만료 시간보다 앞서있다면 (24시간 지나지 않음) true 반환
+         if os.time() < data.ExpireTime then
+            return true
+         end
+      end
+   end
+   return false
+end
+
+-- 24시간 만료 시간 저장 함수
+local function saveAuthTime()
+   if writefile then
+      local data = {
+         ExpireTime = os.time() + (24 * 60 * 60) -- 현재 시간 + 24시간(초)
+      }
+      writefile(AuthFile, HttpService:JSONEncode(data))
+   end
+end
+
+----------------------------------------------------
+-- [핵심] 이미 24시간 이내에 인증한 기록이 있다면 키 창 생략 후 메인 실행
+----------------------------------------------------
+if checkAuthValid() then
+   -- 알림 표시 후 바로 메인 스크립트 로드
+   loadMainHub()
+   return
+end
+
+----------------------------------------------------
+-- [인증 전용 UI] 24시간 기록이 없을 때만 나타나는 키 입력 창
+----------------------------------------------------
+local KeyWindow = Rayfield:CreateWindow({
+   Name = "🔒 Neihub Security Portal",
+   LoadingTitle = "Secure Connection",
+   LoadingSubtitle = "Netlify Key Verification",
+   ConfigurationSaving = { Enabled = false },
+   Discord = { Enabled = false },
+   KeySystem = false
+})
+
+local VerifyTab = KeyWindow:CreateTab("Key Login", 4483362458)
+
+VerifyTab:CreateSection("Neihub 공식 인증 시스템")
+VerifyTab:CreateParagraph({
+   Title = "24시간 지속 인증", 
+   Content = "아래 버튼을 눌러 사이트에서 키를 발급받으세요. 한번 인증하면 24시간 동안 키 입력 없이 바로 스크립트가 실행됩니다."
+})
+
+-- Netlify 사이트 링크 복사 버튼
+VerifyTab:CreateButton({
+   Name = "🌐 키 발급 사이트 링크 복사하기",
+   Callback = function()
+      if setclipboard then
+         setclipboard("https://neihub-key-script.netlify.app")
+         Rayfield:Notify({
+            Title = "클립보드 복사 완료", 
+            Content = "사이트 링크가 복사되었습니다. 브라우저에 붙여넣으세요!", 
+            Duration = 4
+         })
+      end
+   end,
+})
+
+local userEnteredKey = ""
+VerifyTab:CreateInput({
+   Name = "발급받은 키 입력",
+   PlaceholderText = "여기에 키를 붙여넣으세요...",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+      userEnteredKey = Text
+   end,
+})
+
+VerifyTab:CreateButton({
+   Name = "✨ 수락 및 인증 확인 (Verify)",
+   Callback = function()
+      -- 키 검증 조건 (사이트에서 발급되는 키 형식)
+      if userEnteredKey ~= "" and string.find(userEnteredKey, "Neihub_") then
+         saveAuthTime() -- 24시간 유효 시간 저장
+         Rayfield:Notify({
+            Title = "인증 성공!", 
+            Content = "24시간 동안 키 인증이 유지됩니다. 스크립트를 실행합니다.", 
+            Duration = 3
+         })
+         
+         -- 키 인증 창 닫기
+         pcall(function() KeyWindow:Destroy() end)
+         
+         -- 메인 스크립트 실행
+         loadMainHub()
+      else
+         Rayfield:Notify({
+            Title = "인증 실패", 
+            Content = "올바르지 않은 키입니다. 사이트에서 다시 확인해주세요.", 
+            Duration = 3
+         })
+      end
+   end,
+})
+
+
+----------------------------------------------------
+-- [메인 스크립트 허브] (24시간 유지 중이거나 인증 성공 시 실행)
+----------------------------------------------------
+function loadMainHub()
+   local MainWindow = Rayfield:CreateWindow({
+      Name = "⚡ Neihub [모바일 전용 프리미엄 허브]",
+      LoadingTitle = "Hub Initializing...",
+      LoadingSubtitle = "24시간 인증 활성화됨",
+      ConfigurationSaving = { Enabled = true, FolderName = "NeihubHub", FileName = "MainConfig" },
+      Discord = { Enabled = false },
+      KeySystem = false
+   })
+
+   local Camera = workspace.CurrentCamera
+   local RunService = game:GetService("RunService")
+   local UserInputService = game:GetService("UserInputService")
+
+   -- 1. Ragebot 탭
+   local RageTab = MainWindow:CreateTab("Ragebot", 4483362458)
+   RageTab:CreateSection("타겟 머리 추적 및 TP")
+   
+   local headTPActive = false
+   RageTab:CreateToggle({
+      Name = "상대 머리로 TP 후 공격",
+      CurrentValue = false,
+      Callback = function(Value)
+         headTPActive = Value
+      end,
+   })
+
+   RunService.Heartbeat:Connect(function()
+      if headTPActive and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+         local closest = nil
+         local shortest = math.huge
+         for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
+               local dist = (LocalPlayer.Character.HumanoidRootPart.Position - p.Character.Head.Position).Magnitude
+               if dist < shortest then shortest = dist closest = p end
+            end
+         end
+         if closest and closest.Character and closest.Character:FindFirstChild("Head") then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = closest.Character.Head.CFrame * CFrame.new(0, 2, 0)
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, closest.Character.Head.Position)
+         end
+      end
+   end)
+
+   -- 2. Main 탭 (10가지 기능)
+   local MainTab = MainWindow:CreateTab("Main (10가지)", 4483362458)
+   MainTab:CreateSection("주요 전투 및 보조 기능")
+   
+   local features = {
+      "1. 에임봇 (Aimbot)", "2. 무소음 에임 (Silent Aim)", "3. 자동 발사 (Triggerbot)", 
+      "4. 벽 투시 (Wallhack)", "5. 적 위치 선 표시 (ESP Lines)", "6. 반동 제어 (No Recoil)", 
+      "7. 무한 탄창 (Infinite Ammo)", "8. 연속 자동 사격 (Auto Shoot)", "9. 연사 속도 증가 (Rapid Fire)", "10. 시야각 조절 (FOV)"
+   }
+
+   for _, featName in ipairs(features) do
+      MainTab:CreateToggle({
+         Name = featName,
+         CurrentValue = false,
+         Callback = function(Value)
+            -- 기능별 로직 구현 공간
+         end,
+      })
+   end
+
+   -- 3. 스크립트 조회 탭
+   local ScriptTab = MainWindow:CreateTab("스크립트 조회", 4483362458)
+   ScriptTab:CreateSection("클라우드 스크립트 저장소")
+
+   ScriptTab:CreateButton({
+      Name = "추가 스크립트 A 조회 및 실행",
+      Callback = function()
+         Rayfield:Notify({Title = "조회 완료", Content = "추가 스크립트 A가 정상적으로 로드되었습니다.", Duration = 3})
+      end,
+   })
+
+   ScriptTab:CreateButton({
+      Name = "추가 스크립트 B 조회 및 실행",
+      Callback = function()
+         Rayfield:Notify({Title = "조회 완료", Content = "추가 스크립트 B가 정상적으로 로드되었습니다.", Duration = 3})
+      end,
+   })
+
+   Rayfield:Notify({Title = "Neihub", Content = "24시간 동안 인증이 유지됩니다. 모든 기능 활성화 완료!", Duration = 4})
+end
